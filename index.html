@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"/>
+<title>HL Chart — Multi</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#08090d;--bg2:#0e1018;--bg3:#13161f;--bg4:#1a1e2a;
+  --green:#00e5a0;--red:#ff4466;--yellow:#f5a623;
+  --text:#e2e8f4;--muted:#5a6278;--muted2:#3d4358;
+  --border:#1f2435;--border2:#262c3d;
+  --accent:#5b6ef5;--accent2:#7c8cf8;
+  --font-mono:'IBM Plex Mono',monospace;--font-ui:'Inter',sans-serif;
+}
+html{height:100%;overflow:hidden;overscroll-behavior:none}
+body{background:var(--bg);color:var(--text);font-family:var(--font-ui);
+  overflow:hidden;height:100%;width:100%;position:fixed;top:0;left:0;
+  overscroll-behavior:none;display:flex;flex-direction:column}
+
+#grid, #news-view{flex:1;min-height:0}
+#news-view{display:none}
+body.view-news #grid{display:none}
+body.view-news #news-view{display:flex}
+#news-iframe{width:100%;height:100%;border:none;display:block}
+
+#news-alert-toast{position:fixed;top:56px;left:50%;transform:translateX(-50%) translateY(-12px);
+  z-index:250;background:var(--bg2);border:1px solid var(--accent2);border-radius:10px;
+  padding:9px 10px 9px 14px;display:none;align-items:center;gap:10px;max-width:min(90vw,420px);
+  box-shadow:0 16px 40px rgba(0,0,0,.6);opacity:0;transition:opacity .25s, transform .25s}
+#news-alert-toast.show{display:flex;opacity:1;transform:translateX(-50%) translateY(0)}
+#news-alert-text{font-family:var(--font-ui);font-size:12px;color:var(--text);line-height:1.35;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+#news-alert-go{background:var(--accent);border:none;color:#fff;font-family:var(--font-mono);
+  font-size:10px;font-weight:700;border-radius:7px;padding:6px 10px;cursor:pointer;white-space:nowrap;flex-shrink:0}
+#news-alert-go:hover{background:var(--accent2)}
+#news-alert-close{background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;flex-shrink:0}
+
+/* ── TOP BAR ── */
+#topbar{display:flex;align-items:center;gap:8px;padding:7px 12px;position:relative;
+  background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+#topbar .sep{width:1px;align-self:stretch;background:var(--border);margin:0 2px}
+
+.layout-group{display:flex;gap:4px;background:var(--bg4);border:1px solid var(--border2);
+  border-radius:8px;padding:3px}
+.layout-btn{display:flex;align-items:center;justify-content:center;width:30px;height:26px;
+  border-radius:6px;border:none;background:transparent;cursor:pointer;transition:all .15s;color:var(--muted)}
+.layout-btn:hover{color:var(--text)}
+.layout-btn.active{background:rgba(91,110,245,.18);color:var(--accent2)}
+.layout-btn svg{width:15px;height:15px}
+
+#active-label{display:flex;flex-direction:column;gap:1px;padding:2px 6px}
+#active-label .l1{font-family:var(--font-mono);font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+#active-label .l2{font-family:var(--font-mono);font-size:13px;font-weight:700}
+
+#asset-btn{display:flex;align-items:center;gap:6px;background:var(--bg4);
+  border:1px solid var(--border2);border-radius:8px;padding:6px 11px;cursor:pointer;
+  font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--text);transition:all .15s}
+#asset-btn:hover{border-color:var(--accent2);color:var(--accent2)}
+#asset-btn .arrow{font-size:8px;color:var(--muted)}
+
+.tf-group{display:flex;gap:3px}
+.tf-btn{padding:5px 9px;border-radius:7px;border:1px solid transparent;background:transparent;
+  color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:700;cursor:pointer;transition:all .12s}
+.tf-btn:hover{color:var(--text);background:var(--bg4);border-color:var(--border2)}
+.tf-btn.active{background:rgba(91,110,245,.12);border-color:var(--accent);color:var(--accent2)}
+
+#hint{margin-left:auto;font-family:var(--font-mono);font-size:10px;color:var(--muted2);white-space:nowrap}
+
+#refresh-btn,#ind-btn,#news-nav-link{display:flex;align-items:center;gap:5px;background:var(--bg4);
+  border:1px solid var(--border2);border-radius:8px;padding:6px 10px;cursor:pointer;
+  font-family:var(--font-mono);font-size:10px;font-weight:700;color:var(--text);transition:all .15s}
+#refresh-btn:hover,#ind-btn:hover,#news-nav-link:hover{border-color:var(--accent2);color:var(--accent2)}
+#news-nav-link{position:relative;text-decoration:none}
+#refresh-btn.loading #refresh-icon{display:inline-block;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#ind-btn .car{font-size:8px;color:var(--muted);transition:transform .2s}
+#ind-btn.active .car{transform:rotate(180deg)}
+
+/* ── GRID ── */
+#grid{flex:1;display:grid;gap:3px;background:var(--border);min-height:0;padding:3px}
+#grid.layout-1{grid-template-columns:1fr;grid-template-rows:1fr}
+#grid.layout-2{grid-template-columns:1fr 1fr;grid-template-rows:1fr}
+#grid.layout-4{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr}
+.tile{position:relative;background:var(--bg);border:2px solid transparent;border-radius:6px;overflow:hidden;min-height:0}
+.tile.active{border-color:var(--accent)}
+.tile[data-hidden="1"]{display:none}
+.tile iframe{width:100%;height:100%;border:none;display:block;background:var(--bg)}
+.tile-tag{position:absolute;top:4px;left:4px;z-index:5;pointer-events:none;
+  font-family:var(--font-mono);font-size:9px;font-weight:700;color:var(--muted2);
+  background:rgba(8,9,13,.7);border-radius:4px;padding:2px 6px;letter-spacing:.5px}
+.tile.active .tile-tag{color:var(--accent2)}
+
+/* ── SEARCH MODAL (shell-level, controla el panel activo) ── */
+#search-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);
+  z-index:200;align-items:flex-start;justify-content:center;padding-top:60px}
+#search-overlay.open{display:flex}
+#search-box{background:var(--bg2);border:1px solid var(--border);border-radius:12px;
+  width:460px;max-width:calc(100vw - 32px);max-height:520px;display:flex;flex-direction:column;
+  overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.7)}
+#search-input{padding:14px 16px;background:transparent;border:none;border-bottom:1px solid var(--border);
+  color:var(--text);font-family:var(--font-mono);font-size:14px;outline:none;width:100%}
+#search-input::placeholder{color:var(--muted)}
+#asset-list-status{display:none;align-items:center;gap:8px;padding:8px 16px;font-family:var(--font-mono);
+  font-size:10px;color:var(--yellow);background:rgba(245,166,35,.08);border-bottom:1px solid var(--border)}
+#asset-list-status.show{display:flex}
+#asset-list-status button{background:var(--bg4);border:1px solid var(--border2);border-radius:6px;
+  color:var(--accent2);font-family:var(--font-mono);font-size:9px;font-weight:700;padding:3px 8px;cursor:pointer}
+#asset-list{overflow-y:auto;max-height:420px}
+.asset-item{padding:10px 16px;cursor:pointer;display:flex;justify-content:space-between;
+  align-items:center;transition:background .1s;border-bottom:1px solid rgba(31,36,53,.5)}
+.asset-item:hover{background:var(--bg4)}
+.asset-item .name{font-family:var(--font-mono);font-size:13px;font-weight:600}
+.asset-left{display:flex;align-items:center;gap:10px}
+.asset-right{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.asset-right .a-price{font-family:var(--font-mono);font-size:12px;color:var(--text);font-weight:600}
+.asset-right .a-change{font-family:var(--font-mono);font-size:11px;font-weight:700}
+.asset-right .a-change.up{color:var(--green)}
+.asset-right .a-change.down{color:var(--red)}
+.asset-right .a-change.neutral{color:var(--muted)}
+.fav-star{font-size:15px;line-height:1;color:var(--muted2);cursor:pointer;flex-shrink:0;
+  user-select:none;transition:color .12s,transform .1s;padding:2px}
+.fav-star:hover{color:var(--yellow);transform:scale(1.2)}
+.fav-star.active{color:var(--yellow)}
+.asset-section-label{padding:8px 16px 4px;font-family:var(--font-mono);font-size:9px;
+  letter-spacing:1px;text-transform:uppercase;color:var(--muted2)}
+#asset-list::-webkit-scrollbar{width:4px}
+#asset-list::-webkit-scrollbar-track{background:var(--bg2)}
+#asset-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div class="layout-group" id="layout-group">
+    <button class="layout-btn" data-n="1" title="1 gráfico">
+      <svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+    </button>
+    <button class="layout-btn" data-n="2" title="2 gráficos">
+      <svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="8" height="18" rx="1.5"/><rect x="13" y="3" width="8" height="18" rx="1.5"/></svg>
+    </button>
+    <button class="layout-btn active" data-n="4" title="4 gráficos">
+      <svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>
+    </button>
+  </div>
+
+  <div class="sep"></div>
+
+  <div id="active-label">
+    <span class="l1">Panel activo</span>
+    <span class="l2" id="active-label-text">—</span>
+  </div>
+
+  <button id="asset-btn">
+    <span id="asset-name">Activo</span>
+    <span class="arrow">▼</span>
+  </button>
+
+  <div class="tf-group" id="tf-group">
+    <button class="tf-btn" data-tf="1">1m</button>
+    <button class="tf-btn" data-tf="5">5m</button>
+    <button class="tf-btn active" data-tf="15">15m</button>
+    <button class="tf-btn" data-tf="60">1h</button>
+    <button class="tf-btn" data-tf="240">4h</button>
+    <button class="tf-btn" data-tf="1440">1D</button>
+  </div>
+
+  <button id="refresh-btn" title="Actualizar todos los gráficos">
+    <span id="refresh-icon">&#x21bb;</span>
+    <span>Actualizar</span>
+  </button>
+
+  <button id="ind-btn" title="Indicadores del panel activo">
+    <span>📊 Indicadores</span><span class="car">▼</span>
+  </button>
+
+  <button id="news-nav-link" title="Ver noticias cripto">
+    <span>📰 Noticias</span><span class="hlnotif-dot" id="news-unread-dot"></span>
+  </button>
+  <div id="notif-slot"></div>
+
+  <span id="hint">Toca un gráfico para activarlo</span>
+</div>
+
+<div id="grid" class="layout-4">
+  <div class="tile active" data-idx="0"><span class="tile-tag" id="tile-tag-0"></span><iframe></iframe></div>
+  <div class="tile" data-idx="1"><span class="tile-tag" id="tile-tag-1"></span><iframe></iframe></div>
+  <div class="tile" data-idx="2"><span class="tile-tag" id="tile-tag-2"></span><iframe></iframe></div>
+  <div class="tile" data-idx="3"><span class="tile-tag" id="tile-tag-3"></span><iframe></iframe></div>
+</div>
+
+<!-- Vista de Noticias: mismo iframe siempre cargado (sigue vigilando noticias
+     nuevas en segundo plano aunque estés viendo los gráficos), solo se
+     muestra/oculta con CSS al pulsar "Noticias" — no abre pestaña nueva. -->
+<div id="news-view">
+  <iframe id="news-iframe" src="news.html"></iframe>
+</div>
+
+<!-- Aviso flotante cuando llegan noticias mientras estás viendo los gráficos -->
+<div id="news-alert-toast">
+  <span id="news-alert-text"></span>
+  <button id="news-alert-go">Ver noticias</button>
+  <button id="news-alert-close">✕</button>
+</div>
+
+<!-- SEARCH MODAL -->
+<div id="search-overlay">
+  <div id="search-box">
+    <input id="search-input" placeholder="Buscar activo… (ej: ETH, SOL, TSLA)" autocomplete="off"/>
+    <div id="asset-list-status"></div>
+    <div id="asset-list"></div>
+  </div>
+</div>
+
+<script src="notif.js"></script>
+<script>
+'use strict';
+const API = 'https://api.hyperliquid.xyz/info';
+const PANEL_FILE = 'chart-panel.html';
+const DEFAULT_ASSETS = ['BTC','ETH','SOL','HYPE'];
+
+// ─── ESTADO DE LOS 4 SLOTS (persistido) ───────────────────────────────────────
+let slots = [];
+try{ slots = JSON.parse(localStorage.getItem('hlchart:slots')||'null'); }catch(e){}
+if(!Array.isArray(slots) || slots.length!==4){
+  slots = DEFAULT_ASSETS.map(a=>({asset:a, interval:15}));
+}
+let layoutN = parseInt(localStorage.getItem('hlchart:layoutN')||'4',10);
+if(![1,2,4].includes(layoutN)) layoutN=4;
+let activeIdx = 0;
+
+function saveSlots(){ try{ localStorage.setItem('hlchart:slots', JSON.stringify(slots)); }catch(e){} }
+function saveLayout(){ try{ localStorage.setItem('hlchart:layoutN', String(layoutN)); }catch(e){} }
+
+// ─── BROKER DE RED (una sola cola para los 4 paneles) ─────────────────────────
+// Antes, cada uno de los 4 paneles llamaba fetch() por su cuenta: al cambiar de
+// activo/temporalidad, o cada 15s de auto-refresh, se disparaban hasta ~20
+// peticiones casi simultáneas a la API. En una conexión lenta (VPN/4G) eso supera
+// el límite de conexiones concurrentes del navegador por origen, las peticiones
+// se van encolando unas detrás de otras y todo se siente "trabado" — y cuando
+// además se abren más paneles (layout 2/4), se multiplica y el asunto colapsa.
+//
+// El shell ahora centraliza TODAS las llamadas a la API en una sola cola con:
+//  1) Límite de peticiones concurrentes (evita saturar el navegador/red).
+//  2) Deduplicación: si 2+ paneles piden EXACTAMENTE lo mismo casi al mismo
+//     tiempo (p.ej. "metaAndAssetCtxs", o el mismo activo en 2 temporalidades
+//     distintas pidiendo el mismo S/R), se hace UNA sola petición real y se
+//     reparte la respuesta a todos los que la pidieron.
+//  3) Timeout con abort: una petición colgada en una red mala se cancela sola
+//     en vez de quedar acumulada para siempre bloqueando el turno de otras.
+const NET_MAX_CONCURRENT = 4;
+const NET_TIMEOUT_MS = 20000;
+const NET_CACHE_TTL_MS = 4000; // ventana corta solo para fusionar ráfagas casi simultáneas
+let netActive = 0;
+const netQueue = [];
+const netInflight = new Map();   // key -> {subs:[{resolve,reject}]}
+const netResultCache = new Map(); // key -> {time, data}
+
+function netKey(payload){ return JSON.stringify(payload); }
+
+function netPump(){
+  while(netActive < NET_MAX_CONCURRENT && netQueue.length){
+    const job = netQueue.shift();
+    netActive++;
+    netRun(job);
+  }
+}
+async function netRun(job){
+  const {key, payload, timeoutMs} = job;
+  const entry = netInflight.get(key);
+  const ctrl = ('AbortController' in window) ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(()=>ctrl.abort(), timeoutMs || NET_TIMEOUT_MS) : null;
+  try{
+    const r = await fetch(API, {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload), signal: ctrl ? ctrl.signal : undefined});
+    const data = await r.json();
+    netResultCache.set(key, {time: Date.now(), data});
+    entry.subs.forEach(s=>s.resolve(data));
+  }catch(e){
+    entry.subs.forEach(s=>s.reject(e));
+  }finally{
+    if(timer) clearTimeout(timer);
+    netInflight.delete(key);
+    netActive--;
+    netPump();
+  }
+}
+function netFetch(payload, timeoutMs){
+  const key = netKey(payload);
+  const cached = netResultCache.get(key);
+  if(cached && (Date.now()-cached.time) < NET_CACHE_TTL_MS){
+    return Promise.resolve(cached.data);
+  }
+  if(netInflight.has(key)){
+    return new Promise((resolve,reject)=>{ netInflight.get(key).subs.push({resolve,reject}); });
+  }
+  return new Promise((resolve,reject)=>{
+    netInflight.set(key, {subs:[{resolve,reject}]});
+    netQueue.push({key, payload, timeoutMs});
+    netPump();
+  });
+}
+
+const TF_LABELS={1:'1m',5:'5m',15:'15m',60:'1h',240:'4h',1440:'1D'};
+function refreshTileTag(i){
+  const el=document.getElementById('tile-tag-'+i); if(!el) return;
+  const s=slots[i];
+  el.textContent='#'+(i+1)+'  '+displaySymbol(s.asset)+'  '+(TF_LABELS[s.interval]||s.interval+'m');
+}
+function refreshAllTileTags(){ slots.forEach((_,i)=>refreshTileTag(i)); }
+
+// ─── CONSTRUIR IFRAMES ─────────────────────────────────────────────────────────
+const tiles = Array.from(document.querySelectorAll('.tile'));
+function iframeSrc(i){
+  const s=slots[i];
+  return `${PANEL_FILE}?embed=1&panel=${i}&asset=${encodeURIComponent(s.asset)}&tf=${s.interval}`;
+}
+function buildIframes(){
+  tiles.forEach((tile,i)=>{
+    const ifr=tile.querySelector('iframe');
+    ifr.src=iframeSrc(i);
+  });
+}
+
+// ─── LAYOUT (1 / 2 / 4) ────────────────────────────────────────────────────────
+function applyLayout(){
+  const grid=document.getElementById('grid');
+  grid.className='layout-'+layoutN;
+  tiles.forEach((tile,i)=>{
+    tile.setAttribute('data-hidden', i<layoutN ? '0' : '1');
+  });
+  if(activeIdx>=layoutN) setActive(0);
+  document.querySelectorAll('.layout-btn').forEach(b=>{
+    b.classList.toggle('active', parseInt(b.dataset.n,10)===layoutN);
+  });
+  saveLayout();
+}
+document.getElementById('layout-group').addEventListener('click', e=>{
+  const btn=e.target.closest('.layout-btn'); if(!btn) return;
+  layoutN=parseInt(btn.dataset.n,10);
+  applyLayout();
+});
+
+// ─── PANEL ACTIVO ───────────────────────────────────────────────────────────────
+function setActive(i){
+  activeIdx=i;
+  tiles.forEach((t,idx)=>t.classList.toggle('active', idx===i));
+  const s=slots[i];
+  document.getElementById('asset-name').textContent=displaySymbol(s.asset)+'-PERP';
+  document.getElementById('active-label-text').textContent='#'+(i+1)+' · '+displaySymbol(s.asset);
+  document.querySelectorAll('.tf-btn').forEach(b=>{
+    b.classList.toggle('active', parseInt(b.dataset.tf,10)===s.interval);
+  });
+}
+tiles.forEach((tile,i)=>{
+  tile.addEventListener('mousedown', ()=>setActive(i));
+  tile.addEventListener('touchstart', ()=>setActive(i), {passive:true});
+});
+
+// ─── MENSAJES DESDE LOS PANELES (iframes) ──────────────────────────────────────
+window.addEventListener('message', e=>{
+  const msg=e.data||{};
+  if(msg.type==='hlchart-api'){
+    netFetch(msg.payload).then(data=>{
+      try{ e.source.postMessage({type:'hlchart-api-result', reqId:msg.reqId, ok:true, data}, '*'); }catch(err){}
+    }).catch(err=>{
+      try{ e.source.postMessage({type:'hlchart-api-result', reqId:msg.reqId, ok:false, error:String(err&&err.message||err)}, '*'); }catch(err2){}
+    });
+    return;
+  }
+  if(msg.type==='hlchart-state'){
+    const i=parseInt(msg.panel,10);
+    if(isNaN(i)||!slots[i]) return;
+    slots[i].asset=msg.asset;
+    slots[i].interval=msg.interval;
+    saveSlots();
+    refreshTileTag(i);
+    if(i===activeIdx){
+      document.getElementById('asset-name').textContent=displaySymbol(msg.asset)+'-PERP';
+      document.getElementById('active-label-text').textContent='#'+(i+1)+' · '+displaySymbol(msg.asset);
+      document.querySelectorAll('.tf-btn').forEach(b=>{
+        b.classList.toggle('active', parseInt(b.dataset.tf,10)===msg.interval);
+      });
+    }
+  } else if(msg.type==='hlchart-activate'){
+    const i=parseInt(msg.panel,10);
+    if(!isNaN(i) && i!==activeIdx && i<layoutN) setActive(i);
+  }
+});
+
+// ─── BOTÓN TIMEFRAME (aplica al panel activo) ──────────────────────────────────
+document.getElementById('tf-group').addEventListener('click', e=>{
+  const btn=e.target.closest('.tf-btn'); if(!btn) return;
+  const iv=parseInt(btn.dataset.tf,10);
+  document.querySelectorAll('.tf-btn').forEach(b=>b.classList.toggle('active', b===btn));
+  slots[activeIdx].interval=iv;
+  saveSlots();
+  refreshTileTag(activeIdx);
+  const ifr=tiles[activeIdx].querySelector('iframe');
+  ifr.contentWindow.postMessage({type:'hlchart-set-interval', interval:iv}, '*');
+});
+
+// ─── BÚSQUEDA DE ACTIVOS (aplica al panel activo) ──────────────────────────────
+let allAssets=[], assetMarketData={}, favorites=[];
+try{ favorites=JSON.parse(localStorage.getItem('hlchart:favs')||'[]'); }catch(e){}
+if(!Array.isArray(favorites)) favorites=[];
+function saveFavorites(){ try{ localStorage.setItem('hlchart:favs', JSON.stringify(favorites)); }catch(e){} }
+function toggleFavorite(a){
+  const idx=favorites.indexOf(a);
+  if(idx>=0) favorites.splice(idx,1); else favorites.push(a);
+  saveFavorites();
+}
+function fmtPrice(p){
+  if(!p||isNaN(p))return'—';
+  if(p>=1000)return p.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2});
+  if(p>=1)return p.toFixed(4);
+  return p.toFixed(6);
+}
+// Hyperliquid guarda los perps "normales" (BTC, ETH…) en el dex por defecto,
+// pero acciones/índices tokenizados (TSLA, NVDA, SPX500, HOOD…) viven en
+// sub-mercados HIP-3 aparte, con el nombre "dex:TICKER" (ej. "xyz:TSLA").
+// allPerpMetas trae TODOS los dexes de una sola vez, así no se quedan fuera.
+// Es una respuesta bastante más pesada que una consulta normal, así que en
+// una conexión lenta puede tardar o fallar puntualmente; por eso se reintenta
+// sola y se cachea localmente para no depender de que salga bien cada vez.
+function displaySymbol(a){ const i=a.indexOf(':'); return i>=0 ? a.slice(i+1) : a; }
+const ASSETS_CACHE_KEY='hlchart:allAssetsCache:v1';
+const ASSETS_CACHE_TTL=3*60*60*1000; // 3 horas
+let assetListStatus='loading'; // 'loading' | 'full' | 'fallback'
+async function fetchAllPerpMetasOnce(){
+  const d = await netFetch({type:'allPerpMetas'}, 35000); // payload grande: timeout más generoso
+  const names=[]; const data={};
+  (d||[]).forEach(pair=>{
+    const meta=pair && pair[0] && pair[0].universe || [];
+    const ctxs=pair && pair[1] || [];
+    meta.forEach((m,i)=>{
+      if(!m || !m.name) return;
+      names.push(m.name);
+      const ctx=ctxs[i]; if(!ctx) return;
+      const price=parseFloat(ctx.markPx);
+      const prev=parseFloat(ctx.prevDayPx);
+      data[m.name]={price:isNaN(price)?null:price, change:(!isNaN(price)&&!isNaN(prev)&&prev)?(price-prev)/prev*100:null};
+    });
+  });
+  if(!names.length) throw new Error('universo vacío');
+  return {names, data};
+}
+async function fetchAssets(){
+  // 1) Mientras se resuelve, si hay una caché reciente la usamos de inmediato
+  //    (no dejamos el buscador vacío mientras esperamos la red).
+  try{
+    const cached=JSON.parse(localStorage.getItem(ASSETS_CACHE_KEY)||'null');
+    if(cached && Array.isArray(cached.names) && cached.names.length){
+      allAssets=cached.names.sort((a,b)=>displaySymbol(a).localeCompare(displaySymbol(b)));
+      assetMarketData=cached.data||{};
+      assetListStatus = (Date.now()-cached.time)<ASSETS_CACHE_TTL ? 'full' : 'loading';
+    }
+  }catch(e){}
+  // 2) Intentamos traer la lista completa y actualizada, con un reintento
+  //    automático si la primera vez falla (red lenta/VPN inestable).
+  for(let attempt=0; attempt<2; attempt++){
+    try{
+      const {names, data} = await fetchAllPerpMetasOnce();
+      allAssets=names.sort((a,b)=>displaySymbol(a).localeCompare(displaySymbol(b)));
+      assetMarketData=data;
+      assetListStatus='full';
+      try{ localStorage.setItem(ASSETS_CACHE_KEY, JSON.stringify({time:Date.now(), names, data})); }catch(e){}
+      return;
+    }catch(e){
+      if(attempt===0) await new Promise(r=>setTimeout(r,1500));
+    }
+  }
+  // 3) Si ambos intentos fallan y no había nada útil en caché, usamos la
+  //    lista corta de siempre para que el buscador no quede vacío.
+  if(!allAssets.length){
+    allAssets=['BTC','ETH','SOL','ARB','OP','AVAX','DOGE','BNB','LTC','ATOM','LINK','UNI','APT','SUI','INJ','TIA','NEAR','SEI','STX','WIF','HYPE'];
+  }
+  assetListStatus='fallback';
+}
+async function fetchAssetPrices(){
+  // fetchAssets ya trae los precios (allPerpMetas incluye asset contexts);
+  // esto queda como refresco rápido cuando se reabre el buscador.
+  return fetchAssets();
+}
+function renderAssetList(q){
+  const list=document.getElementById('asset-list');
+  const statusEl=document.getElementById('asset-list-status');
+  if(assetListStatus==='fallback'){
+    statusEl.classList.add('show');
+    statusEl.innerHTML='⚠️ No se pudo cargar el listado completo (red lenta o Hyperliquid no respondió). Mostrando solo los principales. <button id="asset-retry-btn">Reintentar</button>';
+    const btn=document.getElementById('asset-retry-btn');
+    if(btn) btn.addEventListener('click', async ()=>{ btn.textContent='Cargando…'; await fetchAssets(); renderAssetList(document.getElementById('search-input').value); });
+  } else if(assetListStatus==='loading'){
+    statusEl.classList.add('show');
+    statusEl.textContent='⏳ Actualizando el listado completo de activos…';
+  } else {
+    statusEl.classList.remove('show');
+  }
+  list.innerHTML='';
+  const ql=q?q.toLowerCase():'';
+  const matches=a=>!ql||a.toLowerCase().includes(ql);
+  const favSet=new Set(favorites);
+  const favItems=favorites.filter(a=>allAssets.includes(a)&&matches(a));
+  const restItems=allAssets.filter(a=>!favSet.has(a)&&matches(a));
+  const renderRow=(a)=>{
+    const div=document.createElement('div');
+    div.className='asset-item';
+    const isFav=favSet.has(a);
+    const md=assetMarketData[a];
+    let rightHtml;
+    if(md && md.price!=null){
+      const chgCls=md.change==null?'neutral':(md.change>=0?'up':'down');
+      const chgTxt=md.change==null?'—':(md.change>=0?'+':'')+md.change.toFixed(2)+'%';
+      rightHtml=`<div class="asset-right"><span class="a-price">${fmtPrice(md.price)}</span><span class="a-change ${chgCls}">${chgTxt}</span></div>`;
+    } else {
+      rightHtml=`<span class="tag">PERP</span>`;
+    }
+    div.innerHTML=`<div class="asset-left"><span class="fav-star${isFav?' active':''}" data-a="${a}">${isFav?'★':'☆'}</span><span class="name">${displaySymbol(a)}-PERP</span></div>${rightHtml}`;
+    div.addEventListener('click',()=>selectAssetForActive(a));
+    div.querySelector('.fav-star').addEventListener('click', e=>{
+      e.stopPropagation();
+      toggleFavorite(a);
+      renderAssetList(document.getElementById('search-input').value);
+    });
+    list.appendChild(div);
+  };
+  if(favItems.length){
+    const head=document.createElement('div'); head.className='asset-section-label'; head.textContent='★ Favoritos';
+    list.appendChild(head);
+    favItems.forEach(renderRow);
+    if(restItems.length){
+      const head2=document.createElement('div'); head2.className='asset-section-label'; head2.textContent='Todos los activos';
+      list.appendChild(head2);
+    }
+  }
+  restItems.slice(0, Math.max(0, 80-favItems.length)).forEach(renderRow);
+}
+function selectAssetForActive(a){
+  slots[activeIdx].asset=a;
+  saveSlots();
+  refreshTileTag(activeIdx);
+  document.getElementById('asset-name').textContent=displaySymbol(a)+'-PERP';
+  document.getElementById('active-label-text').textContent='#'+(activeIdx+1)+' · '+displaySymbol(a);
+  document.getElementById('search-overlay').classList.remove('open');
+  const ifr=tiles[activeIdx].querySelector('iframe');
+  ifr.contentWindow.postMessage({type:'hlchart-set-asset', asset:a}, '*');
+}
+document.getElementById('asset-btn').addEventListener('click', ()=>{
+  document.getElementById('search-overlay').classList.add('open');
+  document.getElementById('search-input').value='';
+  renderAssetList('');
+  setTimeout(()=>document.getElementById('search-input').focus(),50);
+  fetchAssetPrices().then(()=>renderAssetList(document.getElementById('search-input').value));
+});
+document.getElementById('search-input').addEventListener('input', e=>renderAssetList(e.target.value));
+document.getElementById('search-overlay').addEventListener('click', e=>{
+  if(e.target===document.getElementById('search-overlay')) document.getElementById('search-overlay').classList.remove('open');
+});
+document.addEventListener('keydown', e=>{
+  if(e.key==='Escape') document.getElementById('search-overlay').classList.remove('open');
+});
+
+// ─── ACTUALIZAR / INDICADORES (aplican al panel activo) ───────────────────────
+document.getElementById('refresh-btn').addEventListener('click', function(){
+  this.classList.add('loading');
+  tiles.forEach((tile,i)=>{
+    if(i>=layoutN) return; // solo los paneles visibles en el layout actual
+    const ifr=tile.querySelector('iframe');
+    if(ifr && ifr.contentWindow) ifr.contentWindow.postMessage({type:'hlchart-refresh'}, '*');
+  });
+  setTimeout(()=>this.classList.remove('loading'), 900);
+});
+document.getElementById('ind-btn').addEventListener('click', function(){
+  const ifr=tiles[activeIdx].querySelector('iframe');
+  ifr.contentWindow.postMessage({type:'hlchart-open-indicators'}, '*');
+});
+
+// ─── VISTA: gráficos ↔ noticias (misma página, sin pestañas nuevas) ────────
+// El iframe de noticias vive siempre en el DOM (aunque esté oculto) para que
+// pueda seguir vigilando fuentes nuevas y avisar aunque estés viendo gráficos.
+function setView(view){
+  document.body.classList.toggle('view-news', view==='news');
+  if(view==='news'){
+    HLNotif.clearUnread();
+    hideNewsAlert();
+  }
+}
+document.getElementById('news-nav-link').addEventListener('click', ()=>setView('news'));
+
+function showNewsAlert(text){
+  const toast=document.getElementById('news-alert-toast');
+  document.getElementById('news-alert-text').textContent=text;
+  toast.classList.add('show');
+  clearTimeout(showNewsAlert._t);
+  showNewsAlert._t=setTimeout(hideNewsAlert, 9000);
+}
+function hideNewsAlert(){ document.getElementById('news-alert-toast').classList.remove('show'); }
+document.getElementById('news-alert-go').addEventListener('click', ()=>setView('news'));
+document.getElementById('news-alert-close').addEventListener('click', hideNewsAlert);
+
+window.addEventListener('message', e=>{
+  const msg=e.data||{};
+  if(msg.type==='hlchart-view'){
+    setView(msg.view==='news' ? 'news' : 'charts');
+    return;
+  }
+  if(msg.type==='hlchart-news-alert'){
+    // Si ya estás viendo la vista de noticias, no hace falta el aviso flotante
+    // (las verás aparecer ahí mismo); si estás en gráficos, sí se muestra.
+    if(!document.body.classList.contains('view-news')){
+      let label = msg.newCount + (msg.newCount===1?' noticia nueva':' noticias nuevas');
+      if(msg.missedCount) label += ' (incl. '+msg.missedCount+' mientras no estabas)';
+      showNewsAlert('📰 '+label+' — '+(msg.top?msg.top.titleEs:''));
+    }
+    return;
+  }
+});
+
+// ─── NOTIFICACIONES (campana compartida con news.html) ─────────────────────
+HLNotif.buildBell(document.getElementById('notif-slot'));
+HLNotif.bindUnreadDot(document.getElementById('news-unread-dot'));
+
+// ─── INIT ───────────────────────────────────────────────────────────────────────
+buildIframes();
+applyLayout();
+setActive(0);
+refreshAllTileTags();
+fetchAssets();
+</script>
+</body>
+</html>
