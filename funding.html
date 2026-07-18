@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"/>
+<title>Financiación — HL Chart</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#08090d;--bg2:#0e1018;--bg3:#13161f;--bg4:#1a1e2a;
+  --green:#00e5a0;--red:#ff4466;--yellow:#f5a623;--cyan:#22d3ee;
+  --text:#e2e8f4;--muted:#5a6278;--muted2:#3d4358;
+  --border:#1f2435;--border2:#262c3d;
+  --accent:#5b6ef5;--accent2:#7c8cf8;
+  --font-mono:'IBM Plex Mono',monospace;--font-ui:'Inter',sans-serif;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font-ui);overflow-y:auto;overflow-x:hidden}
+body{-webkit-overflow-scrolling:touch}
+#topbar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--bg2);
+  border-bottom:1px solid var(--border);position:sticky;top:0;z-index:5;flex-wrap:wrap}
+#topbar .brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px}
+#topbar .brand .ic{font-size:16px}
+#back-btn{display:flex;align-items:center;justify-content:center;width:30px;height:30px;
+  border-radius:8px;background:var(--bg4);border:1px solid var(--border2);color:var(--text);
+  cursor:pointer;font-size:15px;flex-shrink:0}
+#back-btn:hover{border-color:var(--accent2);color:var(--accent2)}
+#asset-chip{font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--accent2);
+  background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:5px 10px}
+#refresh-btn{margin-left:auto;display:flex;align-items:center;gap:5px;background:var(--bg4);
+  border:1px solid var(--border2);border-radius:8px;padding:6px 10px;cursor:pointer;
+  font-family:var(--font-mono);font-size:10px;font-weight:700;color:var(--text)}
+#refresh-btn:hover{border-color:var(--accent2);color:var(--accent2)}
+#refresh-btn.loading .ic{display:inline-block;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+#content{padding:12px;display:flex;flex-direction:column;gap:12px;max-width:760px;margin:0 auto}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px}
+.card h2{font-size:16px;font-weight:600;margin-bottom:6px}
+.card .sub{font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:14px}
+
+.stat-wrap{text-align:center;padding:8px 0 4px}
+.stat-label{font-family:var(--font-mono);font-size:11px;color:var(--muted);letter-spacing:.5px}
+.stat-big{font-family:var(--font-mono);font-size:34px;font-weight:700;margin:4px 0}
+.stat-big.up{color:var(--green)}
+.stat-big.down{color:var(--red)}
+.stat-small{font-family:var(--font-mono);font-size:12px;color:var(--muted)}
+
+.toggles{display:flex;gap:18px;align-items:center;justify-content:center;margin:16px 0 6px;flex-wrap:wrap}
+.toggle-item{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
+.chk{width:18px;height:18px;border-radius:5px;border:2px solid var(--border2);display:flex;
+  align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
+.chk.on{background:var(--cyan);border-color:var(--cyan)}
+.chk.on::after{content:'✓';color:#04141a;font-size:12px;font-weight:700}
+.toggle-item .lbl{font-family:var(--font-mono);font-size:12px;color:var(--text)}
+.legend-line{display:inline-block;width:16px;height:2px;border-radius:1px}
+
+#chart-container{width:100%;height:280px;margin-top:6px}
+.dl-btn{display:flex;align-items:center;justify-content:center;gap:5px;height:32px;padding:0 10px;
+  border-radius:8px;background:var(--bg4);border:1px solid var(--border2);color:var(--muted);cursor:pointer;
+  font-family:var(--font-mono);font-size:10px;font-weight:700;white-space:nowrap}
+.dl-btn:hover{color:var(--accent2);border-color:var(--accent2)}
+.chart-top-row{display:flex;justify-content:flex-end;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+
+/* ── Gráfico de área (funding acumulado + oportunidades) ── */
+#area-chart-wrap{width:100%;margin-top:2px;border-radius:8px;overflow:hidden}
+#area-chart-canvas{display:block;width:100%}
+.op-legend{display:flex;gap:16px;align-items:center;justify-content:center;margin-bottom:8px;flex-wrap:wrap}
+.op-item{display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11px;color:var(--muted)}
+.op-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.op-dot.buy{background:var(--green)}
+.op-dot.sell{background:var(--red)}
+#op-list{display:flex;flex-direction:column;gap:6px;margin-top:12px;max-height:220px;overflow-y:auto}
+.op-row{display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg3);
+  border:1px solid var(--border2);border-radius:8px;font-size:12px}
+.op-tag{font-family:var(--font-mono);font-size:9px;font-weight:700;letter-spacing:.5px;
+  padding:2px 7px;border-radius:5px;flex-shrink:0}
+.op-tag.buy{background:rgba(0,229,160,.15);color:var(--green)}
+.op-tag.sell{background:rgba(255,68,102,.15);color:var(--red)}
+.op-time{font-family:var(--font-mono);font-size:10px;color:var(--muted);white-space:nowrap}
+.op-val{font-family:var(--font-mono);font-weight:700;margin-left:auto}
+#op-empty{font-size:12px;color:var(--muted);text-align:center;padding:14px 0}
+
+/* ── Config de alertas de picos ── */
+.cfg-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;
+  border-bottom:1px solid var(--border);font-size:12px}
+.cfg-row:last-of-type{border-bottom:none}
+.cfg-row label{color:var(--muted);flex:1}
+.cfg-row input[type=number]{width:70px;background:var(--bg3);border:1px solid var(--border2);
+  border-radius:6px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:5px 7px;text-align:right}
+.ind-toggle{width:36px;height:20px;border-radius:11px;background:var(--bg4);border:1px solid var(--border2);
+  position:relative;cursor:pointer;flex-shrink:0}
+.ind-toggle::after{content:'';position:absolute;top:1px;left:1px;width:16px;height:16px;border-radius:50%;
+  background:var(--muted);transition:all .15s}
+.ind-toggle.on{background:rgba(0,229,160,.25);border-color:var(--green)}
+.ind-toggle.on::after{transform:translateX(16px);background:var(--green)}
+
+/* ── Historial de picos detectados ── */
+#spike-list{display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto}
+.spike-row{display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg3);
+  border:1px solid var(--border2);border-radius:8px;font-size:12px}
+.spike-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.spike-dot.up{background:var(--green)}
+.spike-dot.down{background:var(--red)}
+.spike-time{font-family:var(--font-mono);font-size:10px;color:var(--muted);white-space:nowrap}
+.spike-val{font-family:var(--font-mono);font-weight:700;margin-left:auto}
+.spike-val.up{color:var(--green)}
+.spike-val.down{color:var(--red)}
+#spike-empty{font-size:12px;color:var(--muted);text-align:center;padding:14px 0}
+
+/* ── Toast in-page ── */
+#fund-toast{position:fixed;left:50%;bottom:16px;transform:translateX(-50%) translateY(10px);
+  z-index:50;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;padding:10px 14px;
+  display:flex;align-items:flex-start;gap:10px;max-width:min(92vw,420px);box-shadow:0 16px 40px rgba(0,0,0,.6);
+  opacity:0;pointer-events:none;transition:opacity .2s, transform .2s}
+#fund-toast.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
+#fund-toast b{display:block;font-family:var(--font-mono);font-size:11px;margin-bottom:2px}
+#fund-toast.up b{color:var(--green)}
+#fund-toast.down b{color:var(--red)}
+#fund-toast .body{flex:1;min-width:0;font-size:12px;color:var(--text);line-height:1.35}
+#fund-toast .close{background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <button id="back-btn" title="Volver a los gráficos">←</button>
+  <div class="brand"><span class="ic">📈</span><span>Financiación en tiempo real</span></div>
+  <span id="asset-chip">—</span>
+  <button id="refresh-btn"><span class="ic">&#x21bb;</span><span>Actualizar</span></button>
+</div>
+
+<div id="content">
+
+  <div class="card">
+    <h2>Tasa de financiación</h2>
+    <div class="sub">Tasa anualizada firmada (verde/rojo) con financiación bruta acumulada (línea punteada), calculada a partir del histórico real de la vela por hora del activo del panel #1.</div>
+
+    <div class="stat-wrap">
+      <div class="stat-label">TASA DE FINANCIACIÓN ANUALIZADA ACTUAL</div>
+      <div class="stat-big" id="stat-annual">—</div>
+      <div class="stat-small">Tasa de 1 hora <span id="stat-hourly">—</span> · próx. cambio en <span id="stat-nextfund">—</span></div>
+    </div>
+
+    <div class="toggles">
+      <div class="toggle-item" id="toggle-hourly">
+        <span class="chk on"></span>
+        <span class="legend-line" style="background:var(--green)"></span>
+        <span class="lbl">Anualizado por hora</span>
+      </div>
+      <div class="toggle-item" id="toggle-cum">
+        <span class="chk on"></span>
+        <span class="legend-line" style="background:var(--cyan);border-top:2px dashed var(--cyan);height:0"></span>
+        <span class="lbl">Acumulativo</span>
+      </div>
+    </div>
+
+    <div class="chart-top-row">
+      <div class="dl-btn" id="dl-btn" title="Descargar CSV"><span>⬇</span><span>CSV</span></div>
+      <div class="dl-btn" id="dl-png-btn" title="Descargar este gráfico como imagen"><span>🖼</span><span>PNG</span></div>
+    </div>
+    <div id="chart-container"></div>
+  </div>
+
+  <div class="card">
+    <h2>Funding acumulado — oportunidades</h2>
+    <div class="sub">Financiación acumulada del histórico cargado. Se marcan los giros significativos: techos (longs sobrecargados → posible oportunidad de venta/short) y suelos (shorts sobrecargados → posible oportunidad de compra/long).</div>
+
+    <div class="op-legend">
+      <span class="op-item"><span class="op-dot buy"></span>Oportunidad de compra</span>
+      <span class="op-item"><span class="op-dot sell"></span>Oportunidad de venta</span>
+    </div>
+
+    <div class="chart-top-row">
+      <div class="dl-btn" id="dl-area-png-btn" title="Descargar este gráfico como imagen"><span>🖼</span><span>PNG</span></div>
+      <div class="dl-btn" id="dl-both-png-btn" title="Descargar ambos gráficos como imagen"><span>⬇⬇</span><span>Ambos</span></div>
+    </div>
+    <div id="area-chart-wrap"><canvas id="area-chart-canvas"></canvas></div>
+
+    <div id="op-list"></div>
+    <div id="op-empty">Sin giros significativos detectados todavía en el rango cargado.</div>
+  </div>
+
+  <div class="card">
+    <h2>Alertas de picos</h2>
+    <div class="sub">Avisa cuando la tasa de una hora se dispara muy por encima de lo normal para este activo — útil para anticipar giros de posicionamiento (shorts/longs muy cargados) antes de que se mueva el precio.</div>
+
+    <div class="cfg-row">
+      <label>Notificarme picos</label>
+      <div class="ind-toggle" id="notify-toggle"></div>
+    </div>
+    <div class="cfg-row">
+      <label>Sonido al detectar</label>
+      <div class="ind-toggle" id="sound-toggle"></div>
+    </div>
+    <div class="cfg-row">
+      <label>Sensibilidad (× la media de 24h)</label>
+      <input type="number" id="mult-input" min="1.5" max="10" step="0.5" value="3">
+    </div>
+    <div class="cfg-row">
+      <label>Piso mínimo (anualizado %)</label>
+      <input type="number" id="floor-input" min="1" max="500" step="1" value="20">
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Historial de picos</h2>
+    <div class="sub">Quedan guardados para que puedas revisarlos y cruzarlos con tus entradas/salidas.</div>
+    <div id="spike-list"></div>
+    <div id="spike-empty">Sin picos detectados todavía en el rango cargado.</div>
+  </div>
+
+</div>
+
+<div id="fund-toast">
+  <div class="body"><b id="fund-toast-title"></b><span id="fund-toast-body"></span></div>
+  <button class="close" id="fund-toast-close">✕</button>
+</div>
+
+<script>
+'use strict';
+const API = 'https://api.hyperliquid.xyz/info';
+
+// ─── MODO EMBEBIDO (igual patrón que chart-panel.html) ───────────────────────
+const _urlParams = new URLSearchParams(location.search);
+const EMBED = _urlParams.get('embed')==='1';
+const PANEL_ID = _urlParams.get('panel')||'funding';
+let asset = _urlParams.get('asset') || 'BTC';
+
+function displaySymbol(a){ const i=a.indexOf(':'); return i>=0 ? a.slice(i+1) : a; }
+
+// ─── CAPA DE RED: delega al shell si está embebido, si no, fetch directo ─────
+let _apiReqSeq=0;
+const _apiPending=new Map();
+function apiRequest(payload, timeoutMs){
+  timeoutMs = timeoutMs || 20000;
+  if(EMBED && window.parent && window.parent!==window){
+    return new Promise((resolve,reject)=>{
+      const reqId = PANEL_ID+'-'+(++_apiReqSeq)+'-'+Date.now();
+      const timer = setTimeout(()=>{ _apiPending.delete(reqId); reject(new Error('timeout')); }, timeoutMs);
+      _apiPending.set(reqId, {resolve, reject, timer});
+      window.parent.postMessage({type:'hlchart-api', reqId, panel:PANEL_ID, payload}, '*');
+    });
+  }
+  const ctrl = ('AbortController' in window) ? new AbortController() : null;
+  const t = ctrl ? setTimeout(()=>ctrl.abort(), timeoutMs) : null;
+  return fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload), signal:ctrl?ctrl.signal:undefined})
+    .then(r=>r.json())
+    .finally(()=>{ if(t) clearTimeout(t); });
+}
+window.addEventListener('message', e=>{
+  const msg=e.data||{};
+  if(msg.type==='hlchart-api-result'){
+    const p=_apiPending.get(msg.reqId); if(!p) return;
+    clearTimeout(p.timer); _apiPending.delete(msg.reqId);
+    if(msg.ok) p.resolve(msg.data); else p.reject(new Error(msg.error||'error de red'));
+    return;
+  }
+  if(msg.type==='hlchart-set-asset' && msg.asset && msg.asset!==asset){
+    asset = msg.asset;
+    resetForNewAsset();
+    return;
+  }
+});
+
+// ─── CONFIG PERSISTIDA (sensibilidad, notificaciones) ────────────────────────
+const CFG_KEY='hlfund:cfg:v1';
+let cfg = {notifyOn:true, soundOn:true, multiplier:3, floorAnnualPct:20, lookbackHours:24};
+try{ const s=JSON.parse(localStorage.getItem(CFG_KEY)||'null'); if(s) cfg=Object.assign(cfg,s); }catch(e){}
+function saveCfg(){ try{ localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); }catch(e){} }
+
+// Última vela de financiación ya "vista" por activo, para no re-notificar el
+// histórico completo cada vez que se recarga la página — solo avisa de picos
+// NUEVOS a partir de que empezaste a mirar este activo.
+const SEEN_KEY='hlfund:seen:v1';
+let seenMap = {};
+try{ seenMap = JSON.parse(localStorage.getItem(SEEN_KEY)||'{}') || {}; }catch(e){}
+function saveSeen(){ try{ localStorage.setItem(SEEN_KEY, JSON.stringify(seenMap)); }catch(e){} }
+
+// Historial de picos detectados por activo (para el panel "Historial de picos")
+const SPIKES_KEY='hlfund:spikes:v1';
+let spikesStore = {};
+try{ spikesStore = JSON.parse(localStorage.getItem(SPIKES_KEY)||'{}') || {}; }catch(e){}
+function saveSpikesStore(){ try{ localStorage.setItem(SPIKES_KEY, JSON.stringify(spikesStore)); }catch(e){} }
+
+// ─── ESTADO DEL GRÁFICO ───────────────────────────────────────────────────────
+let lwChart=null, segSeries=[], cumSeries=null;
+let showHourly=true, showCum=true;
+let lastEntries=[]; // {t(ms), hourlyPct, annualPct, cumPct}
+let lastOpPoints=[]; // {t, cumPct, type:'buy'|'sell'} — giros detectados en el gráfico de área
+
+function initChart(){
+  const el=document.getElementById('chart-container');
+  lwChart = LightweightCharts.createChart(el, {
+    layout:{background:{color:'transparent'}, textColor:'#5a6278', fontFamily:'IBM Plex Mono, monospace', fontSize:10},
+    grid:{vertLines:{color:'rgba(31,36,53,.5)'}, horzLines:{color:'rgba(31,36,53,.5)'}},
+    rightPriceScale:{borderColor:'#1f2435'},
+    timeScale:{borderColor:'#1f2435', timeVisible:true},
+    crosshair:{mode:0},
+    handleScroll:{vertTouchDrag:false},
+  });
+  new ResizeObserver(()=>{ try{ lwChart.applyOptions({width:el.clientWidth, height:el.clientHeight}); }catch(e){} }).observe(el);
+}
+
+function clearSeries(){
+  segSeries.forEach(s=>{ try{ lwChart.removeSeries(s); }catch(e){} });
+  segSeries=[];
+  if(cumSeries){ try{ lwChart.removeSeries(cumSeries); }catch(e){} cumSeries=null; }
+}
+
+// Dibuja la tasa anualizada por hora como tramos de color continuo (verde
+// cuando es positiva, rojo cuando es negativa) — mismo enfoque que usa el
+// gráfico principal para el Supertrend.
+function drawHourlySegments(times, vals){
+  if(!times.length) return;
+  let start=0, cur = vals[0]>=0 ? 1 : -1;
+  for(let i=1;i<=vals.length;i++){
+    if(i===vals.length || (vals[i]>=0?1:-1)!==cur){
+      const from=Math.max(start-1,0);
+      const segT=times.slice(from,i), segV=vals.slice(from,i);
+      const color = cur===1 ? '#00e5a0' : '#ff4466';
+      const s=lwChart.addLineSeries({color, lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false});
+      s.setData(segT.map((t,j)=>({time:t, value:segV[j]})));
+      segSeries.push(s);
+      start=i;
+      if(i<vals.length) cur = vals[i]>=0 ? 1 : -1;
+    }
+  }
+}
+
+function renderChart(){
+  clearSeries();
+  if(!lastEntries.length) return;
+  const times = lastEntries.map(e=>Math.floor(e.t/1000));
+  if(showHourly){
+    drawHourlySegments(times, lastEntries.map(e=>e.annualPct));
+  }
+  if(showCum){
+    cumSeries = lwChart.addLineSeries({color:'#22d3ee', lineWidth:2, lineStyle:2,
+      priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false});
+    cumSeries.setData(times.map((t,i)=>({time:t, value:lastEntries[i].cumPct})));
+    cumSeries.setMarkers(buildSpikeMarkers());
+  }
+}
+
+function buildSpikeMarkers(){
+  const list = spikesStore[asset] || [];
+  return list.map(sp=>({
+    time: Math.floor(sp.t/1000),
+    position: sp.annualPct>=0 ? 'aboveBar' : 'belowBar',
+    color: sp.annualPct>=0 ? '#00e5a0' : '#ff4466',
+    shape:'circle', size:0.7,
+  })).sort((a,b)=>a.time-b.time);
+}
+
+// ─── GRÁFICO DE ÁREA (funding acumulado + oportunidades de compra/venta) ─────
+// Detecta giros significativos en la curva acumulada: un "suelo" (mínimo
+// local) es una zona donde los shorts venían pagando fuerte y la presión
+// empieza a revertir → posible oportunidad de compra/long. Un "techo"
+// (máximo local) es lo simétrico → posible oportunidad de venta/short.
+function detectTurningPoints(entries){
+  const n=entries.length;
+  if(n<10) return [];
+  const vals=entries.map(e=>e.cumPct);
+  const range=Math.max(...vals)-Math.min(...vals);
+  if(range<=0) return [];
+  const minSwing=Math.max(range*0.15, 0.3); // ignora giros pequeños/ruido
+  const W=Math.max(3, Math.round(n*0.05));  // ventana local (~5% de la serie)
+
+  let raw=[];
+  for(let i=W;i<n-W;i++){
+    const win=vals.slice(i-W, i+W+1);
+    const mx=Math.max(...win), mn=Math.min(...win);
+    if(vals[i]===mx) raw.push({i, type:'max'});
+    else if(vals[i]===mn) raw.push({i, type:'min'});
+  }
+  // colapsa candidatos consecutivos del mismo tipo, quedándose con el extremo
+  let collapsed=[];
+  for(const c of raw){
+    const last=collapsed[collapsed.length-1];
+    if(last && last.type===c.type){
+      const better=(c.type==='max' && vals[c.i]>=vals[last.i])||(c.type==='min' && vals[c.i]<=vals[last.i]);
+      if(better) collapsed[collapsed.length-1]=c;
+    } else collapsed.push(c);
+  }
+  // exige alternancia max/min y un swing mínimo entre giros consecutivos
+  let points=[];
+  for(const c of collapsed){
+    if(!points.length){ points.push(c); continue; }
+    const prev=points[points.length-1];
+    if(prev.type===c.type){
+      const better=(c.type==='max' && vals[c.i]>=vals[prev.i])||(c.type==='min' && vals[c.i]<=vals[prev.i]);
+      if(better) points[points.length-1]=c;
+      continue;
+    }
+    if(Math.abs(vals[c.i]-vals[prev.i])<minSwing) continue;
+    points.push(c);
+  }
+  return points.map(p=>({t:entries[p.i].t, cumPct:vals[p.i], type: p.type==='min'?'buy':'sell'}));
+}
+
+function renderAreaChart(){
+  const canvas=document.getElementById('area-chart-canvas');
+  const wrap=document.getElementById('area-chart-wrap');
+  if(!canvas || !wrap || !lastEntries.length) return;
+  const entries=lastEntries;
+  const dpr=window.devicePixelRatio||1;
+  const cssW=wrap.clientWidth||320, cssH=300;
+  canvas.style.width=cssW+'px'; canvas.style.height=cssH+'px';
+  canvas.width=Math.round(cssW*dpr); canvas.height=Math.round(cssH*dpr);
+  const ctx=canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+
+  const pad={top:32, right:14, bottom:24, left:52};
+  const plotW=cssW-pad.left-pad.right, plotH=cssH-pad.top-pad.bottom;
+  const vals=entries.map(e=>e.cumPct), times=entries.map(e=>e.t);
+  let vMin=Math.min(...vals,0), vMax=Math.max(...vals,0);
+  const vPad=(vMax-vMin)*0.12 || 1;
+  vMin-=vPad; vMax+=vPad;
+  const xAt=i=>pad.left+(entries.length>1 ? i/(entries.length-1) : 0)*plotW;
+  const yAt=v=>pad.top+(1-(v-vMin)/(vMax-vMin))*plotH;
+
+  ctx.fillStyle='#0e1018'; ctx.fillRect(0,0,cssW,cssH);
+
+  // gridlines horizontales + labels
+  ctx.strokeStyle='rgba(255,255,255,0.07)'; ctx.lineWidth=1;
+  ctx.font='10px "IBM Plex Mono", monospace'; ctx.fillStyle='#5a6278';
+  const ySteps=5;
+  for(let s=0;s<=ySteps;s++){
+    const v=vMin+(vMax-vMin)*s/ySteps, y=yAt(v);
+    ctx.beginPath(); ctx.moveTo(pad.left,y); ctx.lineTo(cssW-pad.right,y); ctx.stroke();
+    ctx.textAlign='right'; ctx.textBaseline='middle';
+    ctx.fillText(v.toFixed(2)+'%', pad.left-6, y);
+  }
+
+  // línea de cero, punteada
+  const y0=yAt(0);
+  ctx.save(); ctx.setLineDash([4,3]); ctx.strokeStyle='rgba(255,255,255,0.35)';
+  ctx.beginPath(); ctx.moveTo(pad.left,y0); ctx.lineTo(cssW-pad.right,y0); ctx.stroke(); ctx.restore();
+
+  // área rellena, azul sobre cero / rojo bajo cero
+  function fillSeg(fromI,toI,positive){
+    if(toI<=fromI) return;
+    ctx.beginPath(); ctx.moveTo(xAt(fromI), y0);
+    for(let i=fromI;i<=toI;i++) ctx.lineTo(xAt(i), yAt(vals[i]));
+    ctx.lineTo(xAt(toI), y0); ctx.closePath();
+    ctx.fillStyle = positive ? 'rgba(34,211,238,0.20)' : 'rgba(255,68,102,0.20)';
+    ctx.fill();
+  }
+  let segStart=0, segPos=vals[0]>=0;
+  for(let i=1;i<vals.length;i++){
+    if((vals[i]>=0)!==segPos){ fillSeg(segStart,i,segPos); segStart=i; segPos=vals[i]>=0; }
+  }
+  fillSeg(segStart, vals.length-1, segPos);
+
+  // línea principal
+  ctx.beginPath(); ctx.strokeStyle='#22d3ee'; ctx.lineWidth=2;
+  entries.forEach((e,i)=>{ const x=xAt(i), y=yAt(vals[i]); if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
+  ctx.stroke();
+
+  // labels del eje X (fechas)
+  ctx.fillStyle='#5a6278'; ctx.textAlign='center'; ctx.textBaseline='top';
+  const nLabels=Math.min(6, entries.length);
+  for(let k=0;k<nLabels;k++){
+    const i=Math.round(k*(entries.length-1)/Math.max(1,nLabels-1));
+    const lbl=new Date(times[i]).toLocaleDateString('es-ES',{day:'2-digit',month:'short'});
+    ctx.fillText(lbl, xAt(i), cssH-pad.bottom+6);
+  }
+
+  // título
+  ctx.fillStyle='#e2e8f4'; ctx.font='bold 13px Inter, sans-serif';
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  ctx.fillText('Funding acumulado — '+displaySymbol(asset), pad.left, 20);
+
+  // marcadores de oportunidad de compra/venta
+  lastOpPoints = detectTurningPoints(entries);
+  lastOpPoints.forEach(p=>{
+    const idx=entries.findIndex(e=>e.t===p.t);
+    if(idx<0) return;
+    const x=xAt(idx), y=yAt(p.cumPct), buy=p.type==='buy';
+    ctx.beginPath(); ctx.arc(x,y,5,0,Math.PI*2);
+    ctx.fillStyle = buy ? '#00e5a0' : '#ff4466'; ctx.fill();
+    ctx.lineWidth=1.5; ctx.strokeStyle='#08090d'; ctx.stroke();
+    ctx.font='bold 9px "IBM Plex Mono", monospace';
+    ctx.fillStyle = buy ? '#00e5a0' : '#ff4466';
+    ctx.textAlign='center'; ctx.textBaseline = buy ? 'top' : 'bottom';
+    ctx.fillText(buy?'▲ COMPRA':'▼ VENTA', x, buy ? y+9 : y-9);
+  });
+
+  renderOpList();
+}
+
+function renderOpList(){
+  const wrap=document.getElementById('op-list');
+  const empty=document.getElementById('op-empty');
+  if(!wrap) return;
+  const list=lastOpPoints.slice().sort((a,b)=>b.t-a.t);
+  wrap.innerHTML='';
+  empty.style.display = list.length ? 'none' : 'block';
+  list.forEach(p=>{
+    const row=document.createElement('div'); row.className='op-row';
+    const buy=p.type==='buy';
+    row.innerHTML = `<span class="op-tag ${buy?'buy':'sell'}">${buy?'COMPRA':'VENTA'}</span>
+      <span class="op-time">${fmtTime(p.t)}</span>
+      <span class="op-val ${buy?'up':'down'}">${fmtPct(p.cumPct,2)} acum.</span>`;
+    wrap.appendChild(row);
+  });
+}
+new ResizeObserver(()=>{ if(lastEntries.length) renderAreaChart(); }).observe(document.getElementById('area-chart-wrap'));
+
+// ─── CÁLCULO DE PICOS ─────────────────────────────────────────────────────────
+// Un "pico" es una hora cuya tasa anualizada (en valor absoluto) supera, a la
+// vez, un piso mínimo configurable Y un múltiplo de la media de las últimas
+// N horas — así detecta tanto niveles altos en términos absolutos como saltos
+// bruscos relativos a lo que es normal para ese activo en concreto.
+function detectSpikes(entries){
+  const out=[];
+  for(let i=0;i<entries.length;i++){
+    const from=Math.max(0, i-cfg.lookbackHours);
+    const windowVals=entries.slice(from,i).map(e=>Math.abs(e.annualPct));
+    if(!windowVals.length) continue;
+    const avgAbs = windowVals.reduce((a,b)=>a+b,0)/windowVals.length;
+    const absNow = Math.abs(entries[i].annualPct);
+    const thresh = Math.max(cfg.floorAnnualPct, avgAbs*cfg.multiplier);
+    if(absNow>=thresh && absNow>0.01) out.push(entries[i]);
+  }
+  return out;
+}
+
+function fmtPct(v, digits){
+  digits = digits==null?4:digits;
+  return (v>=0?'+':'')+v.toFixed(digits)+'%';
+}
+function fmtTime(ms){
+  const d=new Date(ms);
+  return d.toLocaleString('es-ES',{month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit'});
+}
+
+function renderSpikeList(){
+  const wrap=document.getElementById('spike-list');
+  const empty=document.getElementById('spike-empty');
+  const list=(spikesStore[asset]||[]).slice().sort((a,b)=>b.t-a.t).slice(0,40);
+  wrap.innerHTML='';
+  empty.style.display = list.length ? 'none' : 'block';
+  list.forEach(sp=>{
+    const row=document.createElement('div'); row.className='spike-row';
+    const up = sp.annualPct>=0;
+    row.innerHTML = `<span class="spike-dot ${up?'up':'down'}"></span>
+      <span class="spike-time">${fmtTime(sp.t)}</span>
+      <span class="spike-val ${up?'up':'down'}">${fmtPct(sp.annualPct,2)}</span>`;
+    wrap.appendChild(row);
+  });
+}
+
+// ─── NOTIFICACIONES ───────────────────────────────────────────────────────────
+let toastTimer=null;
+function showToast(title, body, cls){
+  const el=document.getElementById('fund-toast');
+  el.className='show '+(cls||'');
+  document.getElementById('fund-toast-title').textContent=title;
+  document.getElementById('fund-toast-body').textContent=body;
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(hideToast, 10000);
+}
+function hideToast(){ document.getElementById('fund-toast').classList.remove('show'); }
+document.getElementById('fund-toast-close').addEventListener('click', hideToast);
+
+function playBeep(){
+  try{
+    const Ctx=window.AudioContext||window.webkitAudioContext;
+    if(!Ctx) return;
+    const ctx = window.__fundAudioCtx || (window.__fundAudioCtx=new Ctx());
+    if(ctx.state==='suspended') ctx.resume();
+    const now=ctx.currentTime;
+    [740,980].forEach((f,i)=>{
+      const osc=ctx.createOscillator(), gain=ctx.createGain();
+      osc.type='sine'; osc.frequency.value=f;
+      const t=now+i*0.16;
+      gain.gain.setValueAtTime(0.0001,t);
+      gain.gain.exponentialRampToValueAtTime(0.22,t+0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001,t+0.18);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(t); osc.stop(t+0.2);
+    });
+  }catch(e){}
+}
+function sendBrowserNotification(title, body){
+  try{
+    if(!('Notification' in window) || Notification.permission!=='granted') return;
+    const n=new Notification(title, {body, tag:'fund-'+asset});
+    n.onclick=()=>{ try{ window.focus(); }catch(e){} };
+  }catch(e){}
+}
+function notifySpike(entry){
+  const up = entry.annualPct>=0;
+  const title = (up?'🟢':'🔴')+' Pico de financiación · '+displaySymbol(asset);
+  const body = `Tasa anualizada ${fmtPct(entry.annualPct,2)} (hora: ${fmtPct(entry.hourlyPct,4)}) — muy por encima de lo habitual. `+
+    (up ? 'Longs pagando fuerte a shorts: posible sobre-apalancamiento largo.' : 'Shorts pagando fuerte a longs: posible sobre-apalancamiento corto.');
+  if(!cfg.notifyOn) return;
+  showToast(title, body, up?'up':'down');
+  if(cfg.soundOn) playBeep();
+  sendBrowserNotification(title, body);
+  if(EMBED && window.parent){
+    try{
+      window.parent.postMessage({type:'hlchart-funding-alert', panel:PANEL_ID, asset:displaySymbol(asset),
+        level: up?'info':'warn', title, body}, '*');
+    }catch(e){}
+  }
+}
+
+// ─── FETCH + PROCESAMIENTO ────────────────────────────────────────────────────
+const HISTORY_DAYS=8;
+async function fetchFundingHistory(){
+  const end=Date.now();
+  const start=end - HISTORY_DAYS*24*3600*1000;
+  const d = await apiRequest({type:'fundingHistory', coin:asset, startTime:start, endTime:end}, 20000);
+  return (d||[]).map(x=>({t:x.time, rateFrac:parseFloat(x.fundingRate)}))
+    .filter(x=>!isNaN(x.rateFrac))
+    .sort((a,b)=>a.t-b.t);
+}
+
+function buildEntries(raw){
+  let cum=0;
+  return raw.map(x=>{
+    const hourlyPct = x.rateFrac*100;
+    const annualPct = hourlyPct*24*365;
+    cum += hourlyPct;
+    return {t:x.t, hourlyPct, annualPct, cumPct:cum};
+  });
+}
+
+function updateStatHeader(){
+  if(!lastEntries.length) return;
+  const last=lastEntries[lastEntries.length-1];
+  const big=document.getElementById('stat-annual');
+  big.textContent = fmtPct(last.annualPct,4);
+  big.className = 'stat-big '+(last.annualPct>=0?'up':'down');
+  document.getElementById('stat-hourly').textContent = fmtPct(last.hourlyPct,4);
+  const now=new Date();
+  const next=new Date(now); next.setMinutes(0,0,0); next.setHours(next.getHours()+1);
+  document.getElementById('stat-nextfund').textContent = Math.round((next-now)/60000)+'m';
+}
+
+let loadEpoch=0;
+async function loadAndRender(isBackground){
+  const myEpoch=++loadEpoch;
+  const btn=document.getElementById('refresh-btn');
+  if(!isBackground) btn.classList.add('loading');
+  try{
+    const raw = await fetchFundingHistory();
+    if(myEpoch!==loadEpoch) return; // el activo cambió mientras esto viajaba
+    lastEntries = buildEntries(raw);
+    if(!lastEntries.length) return;
+
+    // Detecta TODOS los picos del histórico cargado (para pintarlos en el
+    // gráfico y en el historial), pero solo dispara notificación para los
+    // que sean posteriores al último visto para este activo.
+    const spikes = detectSpikes(lastEntries);
+    spikesStore[asset] = spikes.map(s=>({t:s.t, annualPct:s.annualPct, hourlyPct:s.hourlyPct}));
+    saveSpikesStore();
+
+    const lastSeen = seenMap[asset];
+    if(lastSeen==null){
+      // Primera vez que se mira este activo: no se dispara notificación
+      // retroactiva de toda la semana, solo se arma la línea base.
+      seenMap[asset] = lastEntries[lastEntries.length-1].t;
+      saveSeen();
+    } else {
+      const newSpikes = spikes.filter(s=>s.t>lastSeen);
+      newSpikes.forEach(notifySpike);
+      if(newSpikes.length){
+        seenMap[asset] = lastEntries[lastEntries.length-1].t;
+        saveSeen();
+      }
+    }
+
+    updateStatHeader();
+    renderChart();
+    renderAreaChart();
+    renderSpikeList();
+  }catch(e){
+    console.warn('funding fetch error', e);
+  }finally{
+    if(!isBackground) setTimeout(()=>btn.classList.remove('loading'), 400);
+  }
+}
+
+function resetForNewAsset(){
+  document.getElementById('asset-chip').textContent = displaySymbol(asset)+'-PERP';
+  lastEntries=[];
+  clearSeries();
+  document.getElementById('stat-annual').textContent='—';
+  document.getElementById('stat-hourly').textContent='—';
+  loadAndRender(false);
+}
+
+// ─── UI: toggles de series ────────────────────────────────────────────────────
+document.getElementById('toggle-hourly').addEventListener('click', ()=>{
+  showHourly=!showHourly;
+  document.querySelector('#toggle-hourly .chk').classList.toggle('on', showHourly);
+  renderChart();
+});
+document.getElementById('toggle-cum').addEventListener('click', ()=>{
+  showCum=!showCum;
+  document.querySelector('#toggle-cum .chk').classList.toggle('on', showCum);
+  renderChart();
+});
+
+// ─── UI: config de alertas ────────────────────────────────────────────────────
+function paintCfgUI(){
+  document.getElementById('notify-toggle').classList.toggle('on', cfg.notifyOn);
+  document.getElementById('sound-toggle').classList.toggle('on', cfg.soundOn);
+  document.getElementById('mult-input').value = cfg.multiplier;
+  document.getElementById('floor-input').value = cfg.floorAnnualPct;
+}
+document.getElementById('notify-toggle').addEventListener('click', ()=>{
+  cfg.notifyOn=!cfg.notifyOn; saveCfg(); paintCfgUI();
+  if(cfg.notifyOn && 'Notification' in window && Notification.permission==='default'){
+    Notification.requestPermission();
+  }
+});
+document.getElementById('sound-toggle').addEventListener('click', ()=>{
+  cfg.soundOn=!cfg.soundOn; saveCfg(); paintCfgUI();
+  if(cfg.soundOn) playBeep();
+});
+document.getElementById('mult-input').addEventListener('change', e=>{
+  cfg.multiplier=Math.max(1.5, Math.min(10, parseFloat(e.target.value)||3));
+  e.target.value=cfg.multiplier; saveCfg();
+  loadAndRender(true); // recalcula picos con la nueva sensibilidad
+});
+document.getElementById('floor-input').addEventListener('change', e=>{
+  cfg.floorAnnualPct=Math.max(1, Math.min(500, parseFloat(e.target.value)||20));
+  e.target.value=cfg.floorAnnualPct; saveCfg();
+  loadAndRender(true);
+});
+
+// ─── DESCARGA CSV ─────────────────────────────────────────────────────────────
+document.getElementById('dl-btn').addEventListener('click', ()=>{
+  if(!lastEntries.length) return;
+  let csv='timestamp,hourly_pct,annualized_pct,cumulative_pct\n';
+  lastEntries.forEach(e=>{ csv+=`${e.t},${e.hourlyPct},${e.annualPct},${e.cumPct}\n`; });
+  const blob=new Blob([csv],{type:'text/csv'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=`funding_${displaySymbol(asset)}.csv`; a.click();
+  URL.revokeObjectURL(url);
+});
+
+// ─── DESCARGA DE IMÁGENES (PNG) ───────────────────────────────────────────────
+function downloadCanvasBlob(canvas, filename){
+  return new Promise(resolve=>{
+    canvas.toBlob(blob=>{
+      if(!blob){ resolve(); return; }
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a'); a.href=url; a.download=filename; a.click();
+      URL.revokeObjectURL(url);
+      resolve();
+    }, 'image/png');
+  });
+}
+function downloadChart1PNG(){
+  if(!lwChart || !lastEntries.length) return Promise.resolve();
+  try{
+    const canvas=lwChart.takeScreenshot();
+    return downloadCanvasBlob(canvas, `funding_tasa_${displaySymbol(asset)}.png`);
+  }catch(e){ console.warn('screenshot chart1 error', e); return Promise.resolve(); }
+}
+function downloadChart2PNG(){
+  const canvas=document.getElementById('area-chart-canvas');
+  if(!canvas || !lastEntries.length) return Promise.resolve();
+  return downloadCanvasBlob(canvas, `funding_acumulado_${displaySymbol(asset)}.png`);
+}
+document.getElementById('dl-png-btn').addEventListener('click', downloadChart1PNG);
+document.getElementById('dl-area-png-btn').addEventListener('click', downloadChart2PNG);
+document.getElementById('dl-both-png-btn').addEventListener('click', async ()=>{
+  await downloadChart1PNG();
+  setTimeout(downloadChart2PNG, 250); // pequeño delay para que el navegador no bloquee la 2ª descarga
+});
+
+document.getElementById('refresh-btn').addEventListener('click', ()=>loadAndRender(false));
+document.getElementById('back-btn').addEventListener('click', ()=>{
+  if(EMBED && window.parent && window.parent!==window){
+    try{ window.parent.postMessage({type:'hlchart-view', view:'charts'}, '*'); }catch(e){}
+  } else {
+    history.back();
+  }
+});
+if(!EMBED) document.getElementById('back-btn').style.display='none';
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+document.getElementById('asset-chip').textContent = displaySymbol(asset)+'-PERP';
+paintCfgUI();
+initChart();
+loadAndRender(false);
+// Auto-refresh: la ventana horaria de Hyperliquid cierra en punto, así que
+// cada 60s es más que suficiente para capturar la vela nueva en cuanto cierra,
+// y cada 20s se revisa igualmente por si acaso (peticiones ligeras, dedupe
+// gracias a la cola centralizada del shell cuando está embebido).
+setInterval(()=>loadAndRender(true), 45000);
+</script>
+</body>
+</html>
